@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { AI_INSIGHTS } from '@/data/mock';
+import { aiApi } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
 
 type Message = { role: 'assistant' | 'user'; text: string };
@@ -31,10 +32,14 @@ export function AiInsights() {
     setMessages((m) => [...m, { role: 'user', text }]);
     setInput('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    const reply = mockReply(text);
-    setMessages((m) => [...m, { role: 'assistant', text: reply }]);
-    setLoading(false);
+    try {
+      const reply = await aiApi.chat(text);
+      setMessages((m) => [...m, { role: 'assistant', text: reply }]);
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', text: 'Sorry, I could not process your request. Please try again.' }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -153,13 +158,3 @@ export function AiInsights() {
   );
 }
 
-function mockReply(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('best-selling') || lower.includes('best selling'))
-    return 'Your best-selling product is Wireless Earbuds with ₹28,900 revenue (48 units). Cappuccino follows with ₹12,600 revenue from 280 cups.';
-  if (lower.includes('revenue') || lower.includes('increase'))
-    return 'To increase revenue: (1) Create Cappuccino + Cake bundles at ₹450, (2) Run a weekend flash sale on electronics, (3) Send loyalty discounts to your 3 inactive VIP customers.';
-  if (lower.includes('customer') || lower.includes('bought'))
-    return 'Vikram Singh, Arjun Sharma, and Deepa Nair haven\'t purchased in 30+ days. I suggest sending a 15% loyalty coupon to bring them back.';
-  return 'Based on your store data, I see strong performance in electronics and beverages. Revenue is up 12.4% this week. Want specific recommendations on any category?';
-}

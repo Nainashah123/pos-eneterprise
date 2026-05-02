@@ -1,15 +1,17 @@
-﻿'use client';
+'use client';
 
-import { useState } from 'react';
-import { Store, CreditCard, Users, Save, Shield } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Store, CreditCard, Users, Save, Shield, Plus, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/Table';
-import { useQuery } from '@tanstack/react-query';
-import { usersApi } from '@/lib/api/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { usersApi, storesApi } from '@/lib/api/client';
+import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { UserRole } from '@/types';
@@ -26,16 +28,87 @@ const ROLE_VARIANTS: Record<UserRole, 'primary' | 'warning' | 'default'> = {
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('Store');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState('');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [editUser, setEditUser] = useState<any | null>(null);
+
+  const { user: authUser } = useAuthStore();
+  const storeId = authUser?.storeId ?? '';
+  const isAdmin = authUser?.role === 'ADMIN';
+  const qc = useQueryClient();
 
   const { data: users, isLoading: usersLoading } = useQuery({
     queryKey: ['users'],
     queryFn: usersApi.getAll,
   });
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const { data: store, isLoading: storeLoading } = useQuery({
+    queryKey: ['store', storeId],
+    queryFn: () => storesApi.getById(storeId),
+    enabled: !!storeId,
+  });
+
+  const [storeForm, setStoreForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+  });
+
+  const [taxForm, setTaxForm] = useState({ taxRate: 0 });
+
+  useEffect(() => {
+    if (store) {
+      setStoreForm({
+        name: store.name ?? '',
+        phone: store.phone ?? '',
+        email: store.email ?? '',
+        address: store.address ?? '',
+        currency: store.currency ?? 'INR',
+        timezone: store.timezone ?? 'Asia/Kolkata',
+      });
+      setTaxForm({ taxRate: store.taxRate ?? 0 });
+    }
+  }, [store]);
+
+  const handleSaveStore = async () => {
+    if (!isAdmin && authUser?.role !== 'MANAGER') return;
+    setSaving(true);
+    setApiError('');
+    try {
+      await storesApi.update(storeId, storeForm);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      qc.invalidateQueries({ queryKey: ['store', storeId] });
+    } catch (err: any) {
+      setApiError(err.message ?? 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const handleSaveTax = async () => {
+    if (!isAdmin && authUser?.role !== 'MANAGER') return;
+    setSaving(true);
+    setApiError('');
+    try {
+      await storesApi.update(storeId, { taxRate: taxForm.taxRate });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err: any) {
+      setApiError(err.message ?? 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleMutation = useMutation({
+    mutationFn: (id: string) => usersApi.toggleActive(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  });
 
   return (
     <div className="max-w-3xl space-y-5">
@@ -44,7 +117,7 @@ export default function SettingsPage() {
         {TABS.map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => { setTab(t); setApiError(''); setSaved(false); }}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
               tab === t
@@ -60,49 +133,80 @@ export default function SettingsPage() {
         ))}
       </div>
 
+      {apiError && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          {apiError}
+        </div>
+      )}
+
       {/* Store settings */}
       {tab === 'Store' && (
         <Card>
           <CardHeader>
             <CardTitle>Store Information</CardTitle>
           </CardHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input label="Store Name" defaultValue="POS Enterprise Store" />
-              <Input label="Phone" defaultValue="+91 98765 00000" />
-              <Input label="Email" type="email" defaultValue="store@posapp.com" />
-              <Select label="Currency">
-                <option value="INR">INR — Indian Rupee (₹)</option>
-                <option value="USD">USD — US Dollar ($)</option>
-                <option value="EUR">EUR — Euro (€)</option>
-              </Select>
-              <Select label="Timezone">
-                <option>Asia/Kolkata (IST +5:30)</option>
-                <option>America/New_York (EST)</option>
-                <option>Europe/London (GMT)</option>
-              </Select>
-              <Select label="Receipt Footer">
-                <option>Thank you for shopping!</option>
-                <option>Come again soon!</option>
-                <option>Custom message...</option>
-              </Select>
+          {storeLoading ? (
+            <div className="space-y-4">
+              {Array(4).fill(0).map((_, i) => (
+                <div key={i} className="h-10 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+              ))}
             </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">
-                Store Address
-              </label>
-              <textarea
-                defaultValue="12, MG Road, Bengaluru, Karnataka - 560001"
-                rows={2}
-                className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
-              />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Store Name"
+                  value={storeForm.name}
+                  onChange={(e) => setStoreForm((f) => ({ ...f, name: e.target.value }))}
+                />
+                <Input
+                  label="Phone"
+                  value={storeForm.phone}
+                  onChange={(e) => setStoreForm((f) => ({ ...f, phone: e.target.value }))}
+                />
+                <Input
+                  label="Email"
+                  type="email"
+                  value={storeForm.email}
+                  onChange={(e) => setStoreForm((f) => ({ ...f, email: e.target.value }))}
+                />
+                <Select
+                  label="Currency"
+                  value={storeForm.currency}
+                  onChange={(e) => setStoreForm((f) => ({ ...f, currency: e.target.value }))}
+                >
+                  <option value="INR">INR — Indian Rupee (₹)</option>
+                  <option value="USD">USD — US Dollar ($)</option>
+                  <option value="EUR">EUR — Euro (€)</option>
+                </Select>
+                <Select
+                  label="Timezone"
+                  value={storeForm.timezone}
+                  onChange={(e) => setStoreForm((f) => ({ ...f, timezone: e.target.value }))}
+                >
+                  <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
+                  <option value="America/New_York">America/New_York (EST)</option>
+                  <option value="Europe/London">Europe/London (GMT)</option>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">
+                  Store Address
+                </label>
+                <textarea
+                  value={storeForm.address}
+                  onChange={(e) => setStoreForm((f) => ({ ...f, address: e.target.value }))}
+                  rows={2}
+                  className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={handleSaveStore} loading={saving} leftIcon={<Save className="h-4 w-4" />}>
+                  {saved ? 'Saved!' : 'Save Changes'}
+                </Button>
+              </div>
             </div>
-            <div className="flex justify-end">
-              <Button onClick={handleSave} leftIcon={<Save className="h-4 w-4" />}>
-                {saved ? 'Saved!' : 'Save Changes'}
-              </Button>
-            </div>
-          </div>
+          )}
         </Card>
       )}
 
@@ -113,23 +217,17 @@ export default function SettingsPage() {
             <CardTitle>Tax Configuration</CardTitle>
           </CardHeader>
           <div className="space-y-5">
-            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
-              <div>
-                <p className="text-sm font-semibold text-gray-800 dark:text-white">Enable Tax</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Apply tax to applicable products
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
-                <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-5 peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
-              </label>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input label="Default Tax Rate (%)" type="number" defaultValue="9" min="0" max="100" />
+              <Input
+                label="Default Tax Rate (%)"
+                type="number"
+                value={taxForm.taxRate}
+                onChange={(e) => setTaxForm({ taxRate: Number(e.target.value) })}
+                min="0"
+                max="100"
+              />
               <Select label="Tax Type">
-                <option>GST (Goods & Services Tax)</option>
+                <option>GST (Goods &amp; Services Tax)</option>
                 <option>VAT (Value Added Tax)</option>
                 <option>Sales Tax</option>
               </Select>
@@ -148,13 +246,8 @@ export default function SettingsPage() {
               </label>
             </div>
 
-            <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-xl p-4 text-sm text-indigo-700 dark:text-indigo-300">
-              <p className="font-semibold mb-1">Tax Registration (GST)</p>
-              <p className="text-xs">GSTIN: 29AABCU9603R1ZX</p>
-            </div>
-
             <div className="flex justify-end">
-              <Button onClick={handleSave} leftIcon={<Save className="h-4 w-4" />}>
+              <Button onClick={handleSaveTax} loading={saving} leftIcon={<Save className="h-4 w-4" />}>
                 {saved ? 'Saved!' : 'Save Changes'}
               </Button>
             </div>
@@ -166,8 +259,12 @@ export default function SettingsPage() {
       {tab === 'Users' && (
         <Card padding="none">
           <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Users & Roles</h3>
-            <Button size="sm">Invite User</Button>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Users &amp; Roles</h3>
+            {isAdmin && (
+              <Button size="sm" leftIcon={<Plus className="h-3.5 w-3.5" />} onClick={() => setInviteOpen(true)}>
+                Invite User
+              </Button>
+            )}
           </div>
 
           {/* Role permissions info */}
@@ -198,7 +295,7 @@ export default function SettingsPage() {
                 <Th>Role</Th>
                 <Th>Status</Th>
                 <Th>Joined</Th>
-                <Th>Actions</Th>
+                {isAdmin && <Th>Actions</Th>}
               </tr>
             </Thead>
             <Tbody>
@@ -236,15 +333,139 @@ export default function SettingsPage() {
                         )}
                       </Td>
                       <Td className="text-xs text-gray-400">{formatDate(user.createdAt)}</Td>
-                      <Td>
-                        <Button variant="ghost" size="xs">Edit</Button>
-                      </Td>
+                      {isAdmin && (
+                        <Td>
+                          <div className="flex items-center gap-2">
+                            <Button variant="ghost" size="xs" onClick={() => setEditUser(user)}>Edit</Button>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => toggleMutation.mutate(user.id)}
+                              className={user.active ? 'text-red-500 hover:text-red-600' : 'text-emerald-500 hover:text-emerald-600'}
+                            >
+                              {user.active ? 'Deactivate' : 'Activate'}
+                            </Button>
+                          </div>
+                        </Td>
+                      )}
                     </Tr>
                   ))}
             </Tbody>
           </Table>
         </Card>
       )}
+
+      {/* Invite user modal */}
+      <InviteUserModal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onCreated={() => { qc.invalidateQueries({ queryKey: ['users'] }); setInviteOpen(false); }}
+      />
+
+      {/* Edit user modal */}
+      {editUser && (
+        <EditUserModal
+          user={editUser}
+          onClose={() => setEditUser(null)}
+          onSaved={() => { qc.invalidateQueries({ queryKey: ['users'] }); setEditUser(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Invite User Modal ──────────────────────────────────────────────────────
+
+function InviteUserModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'CASHIER' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name || !form.email || !form.password) { setError('All fields required'); return; }
+    if (form.password.length < 8) { setError('Password min 8 characters'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await usersApi.create(form);
+      onCreated();
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to create user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Invite User" size="sm">
+      <form onSubmit={handleCreate} className="space-y-4">
+        {error && (
+          <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 px-4 py-3 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+        <Input label="Full Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        <Input label="Email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+        <Input label="Password" type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min 8 characters" />
+        <Select label="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
+          <option value="CASHIER">Cashier</option>
+          <option value="MANAGER">Manager</option>
+          <option value="ADMIN">Admin</option>
+        </Select>
+        <div className="flex gap-3 justify-end pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={saving}>Create User</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ─── Edit User Modal ────────────────────────────────────────────────────────
+
+function EditUserModal({ user, onClose, onSaved }: { user: any; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ name: user.name, email: user.email, role: user.role?.toUpperCase() ?? 'CASHIER', password: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const payload: any = { name: form.name, email: form.email, role: form.role };
+      if (form.password) payload.password = form.password;
+      await usersApi.update(user.id, payload);
+      onSaved();
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to update user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Edit — ${user.name}`} size="sm">
+      <form onSubmit={handleSave} className="space-y-4">
+        {error && (
+          <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 px-4 py-3 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+        <Input label="Full Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        <Input label="Email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+        <Select label="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
+          <option value="CASHIER">Cashier</option>
+          <option value="MANAGER">Manager</option>
+          <option value="ADMIN">Admin</option>
+        </Select>
+        <Input label="New Password (optional)" type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Leave blank to keep current" />
+        <div className="flex gap-3 justify-end pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={saving} leftIcon={<Save className="h-4 w-4" />}>Save Changes</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

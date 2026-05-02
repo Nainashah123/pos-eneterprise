@@ -9,6 +9,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import { useUIStore } from '@/store/uiStore';
 import { useAuthStore } from '@/store/authStore';
+import { usersApi } from '@/lib/api/client';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -251,21 +252,24 @@ export function TopBar({ title }: TopBarProps) {
 // ─── Profile Modal ──────────────────────────────────────────────────────────
 
 function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { user } = useAuthStore();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [apiError, setApiError] = useState('');
   const [form, setForm] = useState({
-    name: 'Admin User',
-    email: 'admin@posapp.com',
-    phone: '+91 98765 00001',
+    name: user?.name ?? '',
+    email: user?.email ?? '',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (key: string, value: string) => {
+  // Sync form when user changes (e.g. modal reopened)
+  const setField = (key: string, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: '' }));
+    setApiError('');
   };
 
   const validate = () => {
@@ -286,10 +290,19 @@ function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void })
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onClose(); }, 1200);
+    setApiError('');
+    try {
+      await usersApi.updateMe({ name: form.name, email: form.email });
+      if (form.newPassword) {
+        await usersApi.changePassword(form.currentPassword, form.newPassword);
+      }
+      setSaved(true);
+      setTimeout(() => { setSaved(false); onClose(); }, 1200);
+    } catch (err: any) {
+      setApiError(err.message ?? 'Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -298,36 +311,35 @@ function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void })
         {/* Avatar */}
         <div className="flex items-center gap-4">
           <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold shrink-0">
-            AU
+            {form.name?.slice(0, 2).toUpperCase() || 'U'}
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-900 dark:text-white">{form.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">{form.email}</p>
-            <button type="button" className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 hover:underline">
-              Change photo
-            </button>
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 capitalize">{user?.role?.toLowerCase()}</p>
           </div>
         </div>
+
+        {apiError && (
+          <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+            {apiError}
+          </div>
+        )}
 
         <div className="border-t border-gray-200 dark:border-gray-800 pt-4 space-y-4">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Account Info</p>
           <Input
             label="Full Name"
             value={form.name}
-            onChange={(e) => set('name', e.target.value)}
+            onChange={(e) => setField('name', e.target.value)}
             error={errors.name}
           />
           <Input
             label="Email Address"
             type="email"
             value={form.email}
-            onChange={(e) => set('email', e.target.value)}
+            onChange={(e) => setField('email', e.target.value)}
             error={errors.email}
-          />
-          <Input
-            label="Phone"
-            value={form.phone}
-            onChange={(e) => set('phone', e.target.value)}
           />
         </div>
 
@@ -337,7 +349,7 @@ function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void })
             label="Current Password"
             type="password"
             value={form.currentPassword}
-            onChange={(e) => set('currentPassword', e.target.value)}
+            onChange={(e) => setField('currentPassword', e.target.value)}
             error={errors.currentPassword}
             placeholder="Enter current password"
           />
@@ -346,7 +358,7 @@ function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void })
               label="New Password"
               type="password"
               value={form.newPassword}
-              onChange={(e) => set('newPassword', e.target.value)}
+              onChange={(e) => setField('newPassword', e.target.value)}
               error={errors.newPassword}
               placeholder="Min 8 chars"
             />
@@ -354,7 +366,7 @@ function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void })
               label="Confirm New Password"
               type="password"
               value={form.confirmPassword}
-              onChange={(e) => set('confirmPassword', e.target.value)}
+              onChange={(e) => setField('confirmPassword', e.target.value)}
               error={errors.confirmPassword}
               placeholder="Repeat password"
             />

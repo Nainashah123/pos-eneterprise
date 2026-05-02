@@ -29,7 +29,7 @@ export class StoresController {
   create(@Body() dto: CreateStoreDto) { return this.storesService.create(dto); }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Update store details' })
   update(@Param('id') id: string, @Body() dto: Partial<CreateStoreDto>) {
     return this.storesService.update(id, dto);

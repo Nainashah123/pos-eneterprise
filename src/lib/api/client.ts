@@ -395,4 +395,75 @@ export const usersApi = {
     const raw = await apiFetch<any[]>('/users');
     return (raw ?? []).map(mapUser);
   },
+
+  async create(data: { name: string; email: string; password: string; role: string }): Promise<User> {
+    const raw = await apiFetch<any>('/users', { method: 'POST', body: JSON.stringify(data) });
+    return mapUser(raw);
+  },
+
+  async update(id: string, data: { name?: string; email?: string; role?: string; password?: string }): Promise<User> {
+    const raw = await apiFetch<any>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+    return mapUser(raw);
+  },
+
+  async toggleActive(id: string): Promise<{ id: string; active: boolean }> {
+    return apiFetch<any>(`/users/${id}/toggle`, { method: 'PATCH' });
+  },
+
+  async getMe(): Promise<User> {
+    const raw = await apiFetch<any>('/auth/me');
+    return mapUser(raw);
+  },
+
+  async updateMe(data: { name?: string; email?: string }): Promise<User> {
+    const raw = await apiFetch<any>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) });
+    return mapUser(raw);
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await apiFetch<any>('/auth/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  },
+};
+
+// ─── Stores ────────────────────────────────────────────────────────────────
+
+export const storesApi = {
+  async getById(id: string) {
+    return apiFetch<any>(`/stores/${id}`);
+  },
+
+  async update(id: string, data: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    currency?: string;
+    timezone?: string;
+    taxRate?: number;
+  }) {
+    return apiFetch<any>(`/stores/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  },
+};
+
+// ─── AI ────────────────────────────────────────────────────────────────────
+
+export const aiApi = {
+  async chat(message: string): Promise<string> {
+    const raw = await apiFetch<any>('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+    return raw?.reply ?? raw?.message ?? raw?.response ?? String(raw);
+  },
+
+  async getRecommendations() {
+    return apiFetch<any[]>('/ai/recommendations');
+  },
+
+  async getSalesPrediction() {
+    return apiFetch<any[]>('/ai/sales-prediction');
+  },
 };

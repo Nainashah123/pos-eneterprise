@@ -15,7 +15,7 @@ import type { Order } from '@/types';
 interface PaymentModalProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void>;
   createdOrder?: Order;
 }
 
@@ -32,9 +32,12 @@ export function PaymentModal({ open, onClose, onConfirm, createdOrder }: Payment
 
   const handleProcess = async () => {
     setStep('processing');
-    await new Promise((r) => setTimeout(r, 1200));
-    onConfirm();
-    setStep('success');
+    try {
+      await onConfirm();
+      setStep('success');
+    } catch {
+      setStep('confirm');
+    }
   };
 
   const handleClose = () => {

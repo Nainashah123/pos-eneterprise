@@ -1,9 +1,11 @@
-import { Controller, Post, Body, UseGuards, HttpCode } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, UseGuards, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -44,5 +46,27 @@ export class AuthController {
   @ApiOperation({ summary: 'Logout (revoke refresh token)' })
   logout(@CurrentUser() user: JwtPayload) {
     return this.authService.logout(user.sub);
+  }
+
+  @ApiBearerAuth('access-token')
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user profile' })
+  getMe(@CurrentUser() user: JwtPayload) {
+    return this.authService.getMe(user.sub);
+  }
+
+  @ApiBearerAuth('access-token')
+  @Patch('me')
+  @ApiOperation({ summary: 'Update own profile (name, email)' })
+  updateMe(@CurrentUser() user: JwtPayload, @Body() dto: UpdateProfileDto) {
+    return this.authService.updateMe(user.sub, dto);
+  }
+
+  @ApiBearerAuth('access-token')
+  @Patch('me/password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Change own password' })
+  changePassword(@CurrentUser() user: JwtPayload, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.sub, dto);
   }
 }
