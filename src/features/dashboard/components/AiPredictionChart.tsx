@@ -1,65 +1,178 @@
 'use client';
+// WHY: This file renders an interactive chart in the browser. Charts need browser APIs
+// (like canvas sizing and mouse events for tooltips) that don't exist on the server.
+// 'use client' tells Next.js to only run this file in the browser.
 
 import {
   ComposedChart,
-  Line,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
-import { format } from 'date-fns';
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
-import { MOCK_DAILY_SALES, AI_PREDICTION_DATA } from '@/data/mock';
+  // WHY: ComposedChart is a Recharts container that can mix different chart types together —
+  // in this case, bars (actual revenue) and a line (AI predictions) on the same chart.
 
+  Line,
+  // WHY: The Line component draws a connected line graph. Here it draws the predicted revenue
+  // as a dashed amber line so it looks visually distinct from the solid bar chart.
+
+  Bar,
+  // WHY: The Bar component draws vertical bars. Here each bar represents one day's actual revenue.
+
+  XAxis,
+  // WHY: XAxis is the horizontal axis at the bottom of the chart. It displays dates.
+
+  YAxis,
+  // WHY: YAxis is the vertical axis on the left. It shows revenue amounts in ₹k format.
+
+  CartesianGrid,
+  // WHY: CartesianGrid draws the subtle horizontal/vertical guide lines behind the chart.
+  // These lines help users read values accurately — like graph paper behind the chart.
+
+  Tooltip,
+  // WHY: Tooltip is the popup that appears when the user hovers over a bar or point.
+  // It shows the exact value, which is hard to read precisely from bar height alone.
+
+  ResponsiveContainer,
+  // WHY: ResponsiveContainer makes the chart fill whatever width its parent has.
+  // Without this, you'd need to hard-code a pixel width. With it, the chart automatically
+  // resizes when the browser window changes size.
+
+  Legend,
+  // WHY: Legend renders the color-coded key (e.g., "■ Actual  — Predicted") below the chart
+  // so users know which visual element represents which data series.
+} from 'recharts';
+// WHY: Recharts is a charting library built specifically for React. It turns raw data arrays
+// into SVG-based charts. You describe what you want declaratively (as JSX components)
+// and Recharts figures out the actual pixel math and rendering.
+
+import { format } from 'date-fns';
+// WHY: date-fns is a utility library for formatting dates. The raw date strings from the
+// data (e.g., "2024-01-15") are machine-readable but not user-friendly.
+// format(new Date("2024-01-15"), 'dd MMM') turns that into "15 Jan".
+
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+// WHY: Reusable UI shell components. Card provides the bordered container with consistent
+// padding and shadow. Using the shared component keeps the design uniform.
+
+import { MOCK_DAILY_SALES, AI_PREDICTION_DATA } from '@/data/mock';
+// WHY: Mock data is placeholder data used while the real AI prediction backend is being built.
+// MOCK_DAILY_SALES is past revenue data. AI_PREDICTION_DATA is the forecasted future revenue.
+
+// WHY: We build a single combined data array by merging historical data with prediction data.
+// This is done OUTSIDE the component so it only runs once when the module loads,
+// not on every render — a small but good performance habit.
 const chartData = [
+  // WHY: The spread operator (...) "unpacks" an array into individual items.
+  // .slice(-7) takes only the last 7 items (the most recent 7 days of real data).
+  // .map() transforms each day's data into the shape Recharts expects:
+  //   - date: the x-axis value
+  //   - actual: the bar height (real revenue)
+  //   - predicted: null, because these are real past days, not predictions
+  // Setting predicted to null means the prediction line has no point here,
+  // so it only appears in the future section of the chart.
   ...MOCK_DAILY_SALES.slice(-7).map((d) => ({ date: d.date, actual: d.revenue, predicted: null })),
+
+  // WHY: The second spread unpacks the AI prediction data. These future data points
+  // have a predicted value but no actual value (since the day hasn't happened yet).
+  // Recharts handles null values gracefully — it simply skips that point for that series.
   ...AI_PREDICTION_DATA,
 ];
 
 export function AiPredictionChart() {
   return (
+    // WHY: Card is the container component that gives this widget its rounded border and shadow.
     <Card>
       <CardHeader>
         <div>
           <CardTitle>AI Revenue Forecast</CardTitle>
+          {/* WHY: A subtitle explaining what the chart shows — good UX practice so users
+              understand the data source without needing to read documentation. */}
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             7-day prediction based on historical patterns
           </p>
         </div>
+        {/* WHY: This "AI Powered" badge is a purely visual label telling the user that the
+            forecasted data was generated by an AI model, not human-entered. */}
         <span className="text-xs bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 px-2 py-1 rounded-full font-medium">
           AI Powered
         </span>
       </CardHeader>
+
+      {/* WHY: ResponsiveContainer wraps the chart to make it fill 100% of its parent's
+          width. height={220} sets a fixed pixel height. Without ResponsiveContainer,
+          Recharts needs explicit width/height in pixels and won't resize with the window. */}
       <ResponsiveContainer width="100%" height={220}>
+
+        {/* WHY: ComposedChart is the root chart element. data={chartData} feeds the merged
+            array we built above. margin adds small padding so axis labels don't get clipped. */}
         <ComposedChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+
+          {/* WHY: CartesianGrid draws the faint background grid lines.
+              strokeDasharray="3 3" makes them dashed (3px dash, 3px gap) so they're subtle.
+              stroke="#f0f0f0" makes them light gray so they don't compete with the chart data. */}
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" className="dark:stroke-gray-800" />
+
+          {/* WHY: XAxis controls the bottom axis. dataKey="date" tells it to read the 'date'
+              field from each data point as the label. */}
           <XAxis
             dataKey="date"
             tickFormatter={(d) => format(new Date(d), 'dd MMM')}
+            // WHY: tickFormatter is a function that runs on each tick label before displaying it.
+            // It converts "2024-01-15" (ISO string) into "15 Jan" (human-friendly).
+            // new Date(d) parses the string into a JavaScript Date object.
+            // format(..., 'dd MMM') is date-fns's format function — 'dd' = day, 'MMM' = short month.
             tick={{ fontSize: 10, fill: '#9ca3af' }}
+            // WHY: Makes the tick labels small and gray so they don't dominate the chart.
             axisLine={false}
+            // WHY: Hides the solid line along the bottom of the x-axis for a cleaner look.
             tickLine={false}
+            // WHY: Hides the small vertical tick marks that normally poke down from the axis line.
           />
+
+          {/* WHY: YAxis controls the left axis showing revenue values. */}
           <YAxis
             tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+            // WHY: Converts raw numbers (e.g., 25000) into compact labels (e.g., "₹25k").
+            // v / 1000 divides by 1000, .toFixed(0) removes decimal places, then we add "₹" and "k".
+            // This prevents the axis from showing long numbers that crowd the chart.
             tick={{ fontSize: 10, fill: '#9ca3af' }}
             axisLine={false}
             tickLine={false}
           />
+
+          {/* WHY: Tooltip is the hover popup. We customize it with two formatting functions. */}
           <Tooltip
             formatter={(v: any, name: any) => [
+              // WHY: formatter controls how the VALUE in the tooltip is displayed.
+              // v is the raw number, (v as number).toLocaleString() adds locale-aware
+              // thousand separators (e.g., 25000 → "25,000"). We prefix ₹ for currency.
               `₹${(v as number).toLocaleString()}`,
+              // WHY: The second return value is the series label. We rename 'actual' to
+              // 'Actual' and 'predicted' to 'AI Predicted' for friendlier tooltip text.
               name === 'actual' ? 'Actual' : 'AI Predicted',
             ]}
             labelFormatter={(l: any) => format(new Date(l as string), 'MMM d, yyyy')}
+            // WHY: labelFormatter formats the date shown at the top of the tooltip popup.
+            // It converts "2024-01-15" to "Jan 15, 2024" for full readability.
             contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontSize: 12 }}
+            // WHY: Inline styles for the tooltip bubble itself — rounded corners, light border,
+            // small font. Recharts tooltips don't use Tailwind, so inline styles are needed here.
           />
+
+          {/* WHY: Legend renders the color key at the bottom of the chart.
+              wrapperStyle sets the font size for the legend text. */}
           <Legend wrapperStyle={{ fontSize: 11 }} />
+
+          {/* WHY: Bar renders the vertical bars for actual (past) revenue.
+              dataKey="actual" tells it which field from chartData to use as the bar height.
+              fill="#6366f1" is the indigo color. radius={[4,4,0,0]} rounds only the top corners.
+              maxBarSize={20} caps bar width so they don't become huge on wide screens. */}
           <Bar dataKey="actual" name="Actual" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={20} />
+
+          {/* WHY: Line renders the prediction line connecting future data points.
+              dataKey="predicted" reads the 'predicted' field — null for past days means
+              the line only draws where predictions exist (future dates).
+              stroke="#f59e0b" is amber/yellow — visually different from the indigo bars.
+              strokeDasharray="5 5" makes it dashed (5px dash, 5px gap) to signal "estimated".
+              Solid = confirmed data; dashed = forecast. This is a chart convention users recognize.
+              dot renders a small circle on each data point; activeDot is larger on hover. */}
           <Line
             dataKey="predicted"
             name="Predicted"
