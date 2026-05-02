@@ -49,7 +49,7 @@ function mapProduct(p: any): Product {
     cost: Number(p.cost),
     stock: p.inventory?.quantity ?? 0,
     minStock: p.inventory?.minQuantity ?? 5,
-    image: p.image ?? '',
+    image: p.imageUrl ?? p.image ?? '',
     description: p.description ?? '',
     taxable: p.taxable,
     active: p.active,
@@ -188,7 +188,8 @@ export const productsApi = {
         active: data.active,
         categoryName: data.category,
         initialStock: data.stock,
-        minQuantity: data.minStock,
+        minStock: data.minStock,
+        imageUrl: data.image || undefined,
       }),
     });
     return mapProduct(raw);
@@ -205,6 +206,7 @@ export const productsApi = {
         ...(data.cost !== undefined && { cost: data.cost }),
         ...(data.taxable !== undefined && { taxable: data.taxable }),
         ...(data.active !== undefined && { active: data.active }),
+        ...(data.image !== undefined && { imageUrl: data.image || null }),
       }),
     });
     return mapProduct(raw);
