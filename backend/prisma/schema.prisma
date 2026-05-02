@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  CASHIER
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum StockMovementType {
+  SALE
+  PURCHASE
+  ADJUSTMENT
+  RETURN
+  DAMAGE
+}
+
+model Store {
+  id          String   @id @default(uuid())
+  name        String
+  address     String?
+  phone       String?
+  email       String?
+  taxRate     Float    @default(0)
+  currency    String   @default("INR")
+  timezone    String   @default("Asia/Kolkata")
+  logoUrl     String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  products    Product[]
+  categories  Category[]
+  orders      Order[]
+  customers   Customer[]
+  inventories Inventory[]
+  payments    Payment[]
+  movements   StockMovement[]
+
+  @@map("stores")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  storeId      String
+  email        String
+  password     String
+  name         String
+  role         Role     @default(CASHIER)
+  active       Boolean  @default(true)
+  refreshToken String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders       Order[]
+
+  @@unique([storeId, email])
+  @@map("users")
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  storeId     String
+  name        String
+  description String?
+  color       String?
+  icon        String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products    Product[]
+
+  @@unique([storeId, name])
+  @@map("categories")
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  storeId     String
+  categoryId  String?
+  name        String
+  description String?
+  sku         String
+  barcode     String?
+  price       Float
+  cost        Float       @default(0)
+  imageUrl    String?
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  store       Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category    Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  inventory   Inventory?
+  orderItems  OrderItem[]
+  movements   StockMovement[]
+
+  @@unique([storeId, sku])
+  @@map("products")
+}
+
+model Inventory {
+  id          String   @id @default(uuid())
+  storeId     String
+  productId   String   @unique
+  quantity    Int      @default(0)
+  minStock    Int      @default(5)
+  maxStock    Int      @default(1000)
+  updatedAt   DateTime @updatedAt
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("inventories")
+}
+
+model StockMovement {
+  id          String            @id @default(uuid())
+  storeId     String
+  productId   String
+  type        StockMovementType
+  quantity    Int
+  note        String?
+  createdAt   DateTime          @default(now())
+
+  store       Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("stock_movements")
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  storeId        String
+  name           String
+  email          String?
+  phone          String?
+  address        String?
+  loyaltyPoints  Int      @default(0)
+  totalSpent     Float    @default(0)
+  totalOrders    Int      @default(0)
+  tags           String[] @default([])
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders         Order[]
+
+  @@unique([storeId, email])
+  @@map("customers")
+}
+
+model Order {
+  id            String        @id @default(uuid())
+  storeId       String
+  orderNumber   String
+  cashierId     String
+  customerId    String?
+  status        OrderStatus   @default(PENDING)
+  subtotal      Float
+  discountPct   Float         @default(0)
+  discountAmt   Float         @default(0)
+  taxPct        Float         @default(0)
+  taxAmt        Float         @default(0)
+  total         Float
+  paymentMethod PaymentMethod @default(CASH)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashier       User          @relation(fields: [cashierId], references: [id])
+  customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items         OrderItem[]
+  payment       Payment?
+
+  @@unique([storeId, orderNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  productId   String
+  productName String
+  sku         String
+  price       Float
+  quantity    Int
+  discount    Float    @default(0)
+  total       Float
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  storeId       String
+  orderId       String        @unique
+  method        PaymentMethod
+  amount        Float
+  status        PaymentStatus @default(PENDING)
+  reference     String?
+  cashGiven     Float?
+  changeGiven   Float?
+  processedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
